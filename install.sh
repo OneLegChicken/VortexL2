@@ -137,8 +137,26 @@ chmod 755 /etc/vortexl2/haproxy || true
 # Reload systemd
 systemctl daemon-reload
 
-# Remove old service files (cleanup from previous versions)
+# ---- CLEANUP OLD SERVICES ----
+echo -e "${YELLOW}Cleaning up old services...${NC}"
+
+# Stop and disable old socat-based forward services
+systemctl stop 'vortexl2-forward@*.service' 2>/dev/null || true
+systemctl disable 'vortexl2-forward@*.service' 2>/dev/null || true
 rm -f "$SYSTEMD_DIR/vortexl2-forward@.service" 2>/dev/null || true
+
+# Remove old nftables rules if they exist
+if command -v nft &> /dev/null; then
+    nft delete table inet vortexl2_filter 2>/dev/null || true
+    nft delete table ip vortexl2_nat 2>/dev/null || true
+fi
+rm -f /etc/nftables.d/vortexl2-forward.nft 2>/dev/null || true
+rm -f /etc/sysctl.d/99-vortexl2-forward.conf 2>/dev/null || true
+
+# Stop old forward daemon if running (will be restarted with new config)
+systemctl stop vortexl2-forward-daemon.service 2>/dev/null || true
+
+echo -e "${GREEN}  ✓ Old services cleaned up${NC}"
 
 # Enable services
 systemctl enable vortexl2-tunnel.service 2>/dev/null || true
