@@ -35,6 +35,15 @@ def check_root():
         sys.exit(1)
 
 
+def restart_forward_daemon():
+    """Restart the forward daemon service to pick up config changes."""
+    subprocess.run(
+        "systemctl restart vortexl2-forward-daemon",
+        shell=True,
+        capture_output=True
+    )
+
+
 def cmd_apply():
     """
     Apply all tunnel configurations (idempotent).
@@ -214,7 +223,9 @@ def handle_forwards_menu(manager: ConfigManager):
             if ports:
                 success, msg = forward.add_multiple_forwards(ports)
                 ui.show_output(msg, "Add Forwards to Config")
-                ui.show_info("Forwards added to config. Forward daemon will activate them soon.")
+                # Restart daemon to pick up new ports
+                restart_forward_daemon()
+                ui.show_success("Forwards added. Daemon restarted to apply changes.")
             ui.wait_for_enter()
         elif choice == "2":
             # Remove forwards (from config)
@@ -222,22 +233,27 @@ def handle_forwards_menu(manager: ConfigManager):
             if ports:
                 success, msg = forward.remove_multiple_forwards(ports)
                 ui.show_output(msg, "Remove Forwards from Config")
-                ui.show_info("Forwards removed from config.")
+                # Restart daemon to apply changes
+                restart_forward_daemon()
+                ui.show_success("Forwards removed. Daemon restarted to apply changes.")
             ui.wait_for_enter()
         elif choice == "3":
             # List forwards (already shown above)
             ui.wait_for_enter()
         elif choice == "4":
-            # Restart all - just info
-            ui.show_info("Forward daemon automatically manages server restart.")
+            # Restart daemon
+            restart_forward_daemon()
+            ui.show_success("Forward daemon restarted.")
             ui.wait_for_enter()
         elif choice == "5":
-            # Stop all - just info
-            ui.show_info("Forward daemon manages the lifecycle of forward servers.")
+            # Stop daemon
+            subprocess.run("systemctl stop vortexl2-forward-daemon", shell=True)
+            ui.show_success("Forward daemon stopped.")
             ui.wait_for_enter()
         elif choice == "6":
-            # Start all - just info
-            ui.show_info("Forward daemon automatically starts configured forwards.")
+            # Start daemon
+            subprocess.run("systemctl start vortexl2-forward-daemon", shell=True)
+            ui.show_success("Forward daemon started.")
             ui.wait_for_enter()
 
 
