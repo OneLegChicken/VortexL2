@@ -11,11 +11,10 @@ import argparse
 import subprocess
 import signal
 
-from vortexl2.haproxy_manager import HAProxyManager
-
-# Ensure we can import the package
+# CRITICAL: Fix sys.path BEFORE any vortexl2 imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from vortexl2.haproxy_manager import HAProxyManager
 from vortexl2 import __version__
 from vortexl2.config import TunnelConfig, ConfigManager, GlobalConfig
 from vortexl2.tunnel import TunnelManager

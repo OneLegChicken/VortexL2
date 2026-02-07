@@ -1,7 +1,7 @@
 import subprocess
 import logging
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Optional
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -22,8 +22,10 @@ class HAProxyManager:
         self.config = config
         self.haproxy_config_path = HAPROXY_CONFIG_FILE
     
-    def _generate_haproxy_config(self, ports: List[int], remote_ip: str) -> str:
+    def _generate_haproxy_config(self) -> str:
         """Generate HAProxy configuration with optimizations for stability and performance."""
+        from vortexl2.config import ConfigManager
+        
         config = """
 # Auto-generated HAProxy config for vortexl2
 global
@@ -61,6 +63,13 @@ frontend stats_frontend
     stats refresh 10s
 
 """
+        
+        # Get all configured tunnels
+        config_manager = ConfigManager()
+        tunnels = config_manager.get_all_tunnels()
+        
+        if not tunnels:
+            return config  # Return just global/defaults if no tunnels
         
         # For each tunnel and port create dedicated frontend+backend
         for tunnel in tunnels:
@@ -182,6 +191,9 @@ frontend {frontend_name}
         # Add to config
         self.config.add_port(port)
         
+        # Generate the new configuration for all tunnels
+        config = self._generate_haproxy_config()
+        
         # Write the new configuration to the file
         if not self._write_config_file(config):
             return False, "Failed to write HAProxy configuration"
@@ -190,12 +202,12 @@ frontend {frontend_name}
         if not self._reload_haproxy():
             return False, "Failed to reload HAProxy"
         
-        return True, f"Port forwards for ports {', '.join(map(str, ports))} created successfully."
+        return True, f"Port forward for port {port} created successfully."
     
     def remove_forward(self, ports: List[int]) -> Tuple[bool, str]:
         """Remove port forwards by updating HAProxy configuration."""
-        # Get current configuration and remove the relevant entries
-        current_config = self._generate_haproxy_config(ports, self.config.remote_forward_ip)
+        # Get current configuration (automatically generates for all tunnels)
+        current_config = self._generate_haproxy_config()
         
         # Write updated configuration
         if not self._write_config_file(current_config):
