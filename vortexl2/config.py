@@ -13,6 +13,53 @@ from typing import Optional, List, Dict, Any
 
 CONFIG_DIR = Path("/etc/vortexl2")
 TUNNELS_DIR = CONFIG_DIR / "tunnels"
+GLOBAL_CONFIG_FILE = CONFIG_DIR / "config.yaml"
+
+
+class GlobalConfig:
+    """Global configuration for VortexL2 (forward mode, etc.)."""
+    
+    VALID_FORWARD_MODES = ["none", "haproxy", "socat"]
+    
+    def __init__(self):
+        self._config: Dict[str, Any] = {}
+        self._load()
+    
+    def _load(self) -> None:
+        """Load global configuration from file."""
+        if GLOBAL_CONFIG_FILE.exists():
+            try:
+                with open(GLOBAL_CONFIG_FILE, 'r') as f:
+                    self._config = yaml.safe_load(f) or {}
+            except Exception:
+                self._config = {}
+    
+    def _save(self) -> None:
+        """Save global configuration to file."""
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(GLOBAL_CONFIG_FILE, 'w') as f:
+            yaml.dump(self._config, f, default_flow_style=False)
+        os.chmod(GLOBAL_CONFIG_FILE, 0o600)
+    
+    @property
+    def forward_mode(self) -> str:
+        """Get forwarding mode: 'none' or 'haproxy'."""
+        mode = self._config.get("forward_mode", "none")
+        if mode not in self.VALID_FORWARD_MODES:
+            return "none"
+        return mode
+    
+    @forward_mode.setter
+    def forward_mode(self, value: str) -> None:
+        """Set forwarding mode."""
+        if value not in self.VALID_FORWARD_MODES:
+            raise ValueError(f"Invalid forward mode: {value}. Must be one of {self.VALID_FORWARD_MODES}")
+        self._config["forward_mode"] = value
+        self._save()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Return configuration as dictionary."""
+        return self._config.copy()
 
 
 class TunnelConfig:
@@ -31,6 +78,8 @@ class TunnelConfig:
         "peer_session_id": 20,
         "interface_index": 0,
         "forwarded_ports": [],
+        "encap_type": "ip",      # "ip" or "udp"
+        "udp_port": 55555,       # Only used when encap_type == "udp"
     }
     
     def __init__(self, name: str, config_data: Dict[str, Any] = None, auto_save: bool = True):
@@ -191,6 +240,32 @@ class TunnelConfig:
     @forwarded_ports.setter
     def forwarded_ports(self, value: List[int]) -> None:
         self._config["forwarded_ports"] = value
+        self._save()
+    
+    @property
+    def encap_type(self) -> str:
+        """Get encapsulation type: 'ip' or 'udp'."""
+        return self._config.get("encap_type", "ip")
+    
+    @encap_type.setter
+    def encap_type(self, value: str) -> None:
+        """Set encapsulation type."""
+        if value not in ["ip", "udp"]:
+            raise ValueError("encap_type must be 'ip' or 'udp'")
+        self._config["encap_type"] = value
+        self._save()
+    
+    @property
+    def udp_port(self) -> int:
+        """Get UDP port (only used for encap udp mode)."""
+        return self._config.get("udp_port", 55555)
+    
+    @udp_port.setter
+    def udp_port(self, value: int) -> None:
+        """Set UDP port."""
+        if not (1 <= value <= 65535):
+            raise ValueError("UDP port must be between 1 and 65535")
+        self._config["udp_port"] = value
         self._save()
     
     def get_tunnel_ids(self) -> Dict[str, int]:

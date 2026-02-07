@@ -1,6 +1,6 @@
 """VortexL2 - L2TPv3 Tunnel Manager"""
 
-__version__ = "1.1.0"
+__version__ = "3.0.0"
 __author__ = "Iliya-Developer"
 
 from .config import TunnelConfig, ConfigManager

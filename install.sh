@@ -51,7 +51,7 @@ fi
 
 echo -e "${YELLOW}[1/6] Installing system dependencies...${NC}"
 apt-get update -qq
-# Include haproxy for high-performance port forwarding
+# Install haproxy for high-performance port forwarding (not auto-started)
 apt-get install -y -qq python3 python3-pip python3-venv git iproute2 haproxy
 
 # Install kernel modules package
@@ -137,13 +137,31 @@ chmod 755 /etc/vortexl2/haproxy || true
 # Reload systemd
 systemctl daemon-reload
 
-# Remove old service files (cleanup from previous versions)
+# ---- CLEANUP OLD SERVICES ----
+echo -e "${YELLOW}Cleaning up old services...${NC}"
+
+# Stop and disable old socat-based forward services
+systemctl stop 'vortexl2-forward@*.service' 2>/dev/null || true
+systemctl disable 'vortexl2-forward@*.service' 2>/dev/null || true
 rm -f "$SYSTEMD_DIR/vortexl2-forward@.service" 2>/dev/null || true
 
-# Enable services
+# Remove old nftables rules if they exist
+if command -v nft &> /dev/null; then
+    nft delete table inet vortexl2_filter 2>/dev/null || true
+    nft delete table ip vortexl2_nat 2>/dev/null || true
+fi
+rm -f /etc/nftables.d/vortexl2-forward.nft 2>/dev/null || true
+rm -f /etc/sysctl.d/99-vortexl2-forward.conf 2>/dev/null || true
+
+# Stop old forward daemon if running (will be restarted with new config)
+systemctl stop vortexl2-forward-daemon.service 2>/dev/null || true
+
+echo -e "${GREEN}  ✓ Old services cleaned up${NC}"
+
+# Enable services (but don't auto-start forwarding - user chooses mode)
 systemctl enable vortexl2-tunnel.service 2>/dev/null || true
 systemctl enable vortexl2-forward-daemon.service 2>/dev/null || true
-systemctl enable haproxy 2>/dev/null || true
+# Don't auto-enable haproxy - only enable if user selects haproxy mode
 
 # Start/Restart services
 echo -e "${YELLOW}Starting VortexL2 services...${NC}"
@@ -158,23 +176,10 @@ else
     echo -e "${GREEN}  ✓ vortexl2-tunnel service started${NC}"
 fi
 
-# For forward-daemon: always start/restart it
-if systemctl is-active --quiet vortexl2-forward-daemon.service 2>/dev/null; then
-    systemctl restart vortexl2-forward-daemon.service
-    echo -e "${GREEN}  ✓ vortexl2-forward-daemon service restarted${NC}"
-else
-    systemctl start vortexl2-forward-daemon.service 2>/dev/null || true
-    echo -e "${GREEN}  ✓ vortexl2-forward-daemon service started${NC}"
-fi
-
-# Ensure HAProxy service is running (required for port forwarding)
-if systemctl is-active --quiet haproxy 2>/dev/null; then
-    systemctl restart haproxy
-    echo -e "${GREEN}  ✓ haproxy service restarted${NC}"
-else
-    systemctl start haproxy 2>/dev/null || true
-    echo -e "${GREEN}  ✓ haproxy service started${NC}"
-fi
+# NOTE: Forward daemon and HAProxy are NOT auto-started
+# User must select forward mode (socat/haproxy) in the panel to enable port forwarding
+echo -e "${YELLOW}  ℹ Port forwarding is DISABLED by default${NC}"
+echo -e "${YELLOW}  ℹ Use 'sudo vortexl2' → Port Forwards → Change Mode to enable${NC}"
 
 echo ""
 echo -e "${GREEN}============================================${NC}"

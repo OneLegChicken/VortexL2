@@ -4,6 +4,7 @@ VortexL2 L2TPv3 Tunnel Management
 Handles L2TPv3 tunnel and session creation/deletion using iproute2.
 """
 
+from asyncio.log import logger
 import subprocess
 import re
 from typing import Optional, Dict, Tuple, List
@@ -149,20 +150,36 @@ class TunnelManager:
         if self.check_tunnel_exists():
             return False, f"Tunnel {ids['tunnel_id']} already exists. Delete it first or use recreate."
         
-        cmd = (
-            f"ip l2tp add tunnel "
-            f"tunnel_id {ids['tunnel_id']} "
-            f"peer_tunnel_id {ids['peer_tunnel_id']} "
-            f"encap ip "
-            f"local {self.config.local_ip} "
-            f"remote {self.config.remote_ip}"
-        )
+        # Build command based on encapsulation type
+        cmd_parts = [
+            "ip l2tp add tunnel",
+            f"tunnel_id {ids['tunnel_id']}",
+            f"peer_tunnel_id {ids['peer_tunnel_id']}",
+        ]
+        
+        # Add encapsulation-specific parameters
+        if self.config.encap_type == "udp":
+            cmd_parts.extend([
+                "encap udp",
+                f"local {self.config.local_ip}",
+                f"remote {self.config.remote_ip}",
+                f"udp_sport {self.config.udp_port}",
+                f"udp_dport {self.config.udp_port}",
+            ])
+        else:  # ip (default)
+            cmd_parts.extend([
+                "encap ip",
+                f"local {self.config.local_ip}",
+                f"remote {self.config.remote_ip}",
+            ])
+        
+        cmd = " ".join(cmd_parts)
         
         result = run_command(cmd)
         if not result.success:
             return False, f"Failed to create tunnel: {result.stderr}"
         
-        return True, f"Tunnel {ids['tunnel_id']} created successfully"
+        return True, f"Tunnel {ids['tunnel_id']} created successfully ({self.config.encap_type.upper()} mode)"
     
     def create_session(self) -> Tuple[bool, str]:
         """Create L2TP session in existing tunnel."""
@@ -200,23 +217,59 @@ class TunnelManager:
         return True, f"Interface {self.interface_name} is up"
     
     def assign_ip(self) -> Tuple[bool, str]:
-        """Assign IP address to tunnel interface."""
+        """Assign IP address to tunnel interface with optimized MTU."""
         ip_cidr = self.config.interface_ip
         
         # Check if IP already assigned
         result = run_command(f"ip addr show {self.interface_name}")
         if ip_cidr.split('/')[0] in result.stdout:
-            return True, f"IP {ip_cidr} already assigned"
+            # Still set MTU even if IP exists
+            pass
+        else:
+            result = run_command(f"ip addr add {ip_cidr} dev {self.interface_name}")
+            if not result.success:
+                # Check if it's because address exists
+                if "RTNETLINK answers: File exists" in result.stderr:
+                    pass  # Continue to MTU setting
+                else:
+                    return False, f"Failed to assign IP: {result.stderr}"
         
-        result = run_command(f"ip addr add {ip_cidr} dev {self.interface_name}")
+        # Set optimized MTU for better performance
+        # UDP: 1280 (leave room for L2TP/UDP headers)
+        # IP: 1500 (standard Ethernet MTU, L2TP encapsulation has low overhead)
+        mtu = 1280 if self.config.encap_type == "udp" else 1500
+        result = run_command(f"ip link set dev {self.interface_name} mtu {mtu}")
         if not result.success:
-            # Check if it's because address exists
-            if "RTNETLINK answers: File exists" in result.stderr:
-                return True, f"IP {ip_cidr} already assigned"
-            return False, f"Failed to assign IP: {result.stderr}"
+            return False, f"Failed to set MTU: {result.stderr}"
         
-        return True, f"IP {ip_cidr} assigned to {self.interface_name}"
+        # Enable TCP window scaling for better throughput
+        result = run_command(f"sysctl -w net.ipv4.tcp_window_scaling=1")
+        if not result.success:
+            logger.warning(f"Could not enable TCP window scaling: {result.stderr}")
+        
+        return True, f"IP {ip_cidr} assigned to {self.interface_name} (MTU: {mtu})"
     
+    
+    def configure_firewall(self) -> Tuple[bool, str]:
+        """Configure firewall rules for UDP encapsulation."""
+        if self.config.encap_type != "udp":
+            return True, "Firewall rules not needed for IP encapsulation"
+        
+        port = self.config.udp_port
+        
+        # Add iptables rules
+        commands = [
+            f"iptables -I INPUT -p udp --dport {port} -j ACCEPT",
+            f"iptables -I OUTPUT -p udp --sport {port} -j ACCEPT",
+        ]
+        
+        for cmd in commands:
+            result = run_command(cmd)
+            # Ignore if rule already exists
+            if not result.success and "already exists" not in result.stderr.lower():
+                return False, f"Failed to add firewall rule: {result.stderr}"
+        
+        return True, f"Firewall configured for UDP port {port}"
     def delete_session(self) -> Tuple[bool, str]:
         """Delete L2TP session."""
         ids = self.config.get_tunnel_ids()
@@ -281,6 +334,29 @@ class TunnelManager:
         steps.append(f"Assign IP: {msg}")
         if not success:
             return False, "\n".join(steps)
+        
+        # Configure firewall if needed (UDP mode)
+        if self.config.encap_type == "udp":
+            success, msg = self.configure_firewall()
+            steps.append(f"Configure firewall: {msg}")
+            if not success:
+                return False, "\n".join(steps)
+        
+        # Apply DPI evasion techniques
+        try:
+            from .dpi_evasion import setup_dpi_evasion
+            success, msg = setup_dpi_evasion(self.interface_name, self.config.encap_type)
+            steps.append(f"Apply DPI evasion: {msg}")
+        except Exception as e:
+            steps.append(f"DPI evasion (optional): Skipped - {e}")
+        
+        # Setup connection pooling to reduce signatures
+        try:
+            from .connection_pool import setup_connection_pooling
+            success, msg = setup_connection_pooling(tunnel_name, pool_size=8)
+            steps.append(f"Connection pooling: {msg}")
+        except Exception as e:
+            steps.append(f"Connection pooling (optional): Skipped - {e}")
         
         steps.append(f"\n✓ Tunnel '{tunnel_name}' setup complete!")
         return True, "\n".join(steps)

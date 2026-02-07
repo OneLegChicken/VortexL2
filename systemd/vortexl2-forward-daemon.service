@@ -1,7 +1,8 @@
 [Unit]
-Description=VortexL2 Port Forward Daemon
-After=network.target vortexl2-tunnel.service
+Description=VortexL2 Port Forward Daemon (HAProxy)
+After=network.target vortexl2-tunnel.service haproxy.service
 Requires=network.target
+Wants=haproxy.service
 Documentation=file:///usr/share/doc/vortexl2/README.md
 
 [Service]
@@ -9,6 +10,7 @@ Type=simple
 WorkingDirectory=/opt/vortexl2
 Environment=PYTHONPATH=/opt/vortexl2
 ExecStart=/usr/bin/python3 -m vortexl2.forward_daemon
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=5
 StandardOutput=journal

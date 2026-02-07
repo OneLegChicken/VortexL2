@@ -1,0 +1,16 @@
+[Unit]
+Description=VortexL2 Tunnel Health Watchdog
+After=network.target vortexl2-tunnel.service
+Wants=vortexl2-tunnel.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 -m vortexl2.tunnel_watchdog
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
