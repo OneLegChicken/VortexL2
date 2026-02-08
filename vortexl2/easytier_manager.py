@@ -310,6 +310,70 @@ WantedBy=multi-user.target
         else:
             return False, "Stopped"
     
+    def get_peer_info(self) -> List[Dict[str, Any]]:
+        """Get peer information from easytier-cli peer command.
+        
+        Returns list of peers with their stats:
+        - ipv4: IP address
+        - hostname: peer hostname
+        - cost: connection cost (Local, p2p, etc.)
+        - latency: latency in ms
+        - loss: packet loss percentage
+        - rx: received bytes
+        - tx: transmitted bytes
+        - tunnel: tunnel type (tcp, udp, etc.)
+        - nat: NAT type
+        """
+        if not EASYTIER_CLI.exists():
+            return []
+        
+        success, stdout, stderr = self._run_command(f"{EASYTIER_CLI} peer")
+        if not success or not stdout:
+            return []
+        
+        peers = []
+        lines = stdout.strip().split('\n')
+        
+        # Skip header lines (first 2-3 lines usually)
+        data_started = False
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Skip header/separator lines
+            if line.startswith('|') and ('ipv4' in line.lower() or '---' in line):
+                data_started = True
+                continue
+            
+            if not data_started:
+                continue
+            
+            if not line.startswith('|'):
+                continue
+            
+            # Parse pipe-separated values
+            parts = [p.strip() for p in line.split('|') if p.strip()]
+            
+            if len(parts) >= 8:
+                try:
+                    peer = {
+                        'ipv4': parts[0],
+                        'hostname': parts[1],
+                        'cost': parts[2],
+                        'latency': parts[3] if parts[3] != '-' else None,
+                        'loss': parts[4] if parts[4] != '-' else None,
+                        'rx': parts[5] if parts[5] != '-' else None,
+                        'tx': parts[6] if parts[6] != '-' else None,
+                        'tunnel': parts[7] if len(parts) > 7 and parts[7] != '-' else None,
+                        'nat': parts[8] if len(parts) > 8 else None,
+                    }
+                    peers.append(peer)
+                except (IndexError, ValueError):
+                    continue
+        
+        return peers
+    
     def full_setup(self) -> Tuple[bool, str]:
         """Full tunnel setup (create and start)."""
         return self.start_tunnel()

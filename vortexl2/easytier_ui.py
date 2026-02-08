@@ -43,13 +43,14 @@ def show_easytier_main_menu() -> str:
 
 
 def show_easytier_tunnel_list(manager: EasyTierConfigManager):
-    """Display list of EasyTier tunnels."""
+    """Display list of EasyTier tunnels with peer info."""
     tunnels = manager.get_all_tunnels()
     
     if not tunnels:
         console.print("[yellow]No EasyTier tunnels configured.[/]")
         return
     
+    # Basic tunnel info table
     table = Table(title="EasyTier Tunnels", box=box.ROUNDED)
     table.add_column("#", style="dim", width=3)
     table.add_column("Name", style="magenta")
@@ -75,6 +76,61 @@ def show_easytier_tunnel_list(manager: EasyTierConfigManager):
         )
     
     console.print(table)
+    
+    # Get peer info for running tunnels
+    for config in tunnels:
+        mgr = EasyTierManager(config)
+        is_running, _ = mgr.get_status()
+        
+        if is_running:
+            peers = mgr.get_peer_info()
+            if peers:
+                console.print(f"\n[bold cyan]Peer Stats for {config.name}:[/]")
+                
+                peer_table = Table(box=box.SIMPLE)
+                peer_table.add_column("IP", style="green")
+                peer_table.add_column("Host", style="magenta")
+                peer_table.add_column("Type", style="yellow")
+                peer_table.add_column("Latency", style="cyan")
+                peer_table.add_column("Loss", style="red")
+                peer_table.add_column("RX", style="blue")
+                peer_table.add_column("TX", style="blue")
+                peer_table.add_column("Tunnel", style="white")
+                
+                for peer in peers:
+                    # Color latency based on value
+                    lat = peer.get('latency', '-') or '-'
+                    if lat != '-':
+                        try:
+                            lat_val = float(lat.replace('ms', '').strip())
+                            if lat_val < 50:
+                                lat = f"[green]{lat}[/]"
+                            elif lat_val < 100:
+                                lat = f"[yellow]{lat}[/]"
+                            else:
+                                lat = f"[red]{lat}[/]"
+                        except:
+                            pass
+                    
+                    # Color loss
+                    loss = peer.get('loss', '-') or '-'
+                    if loss != '-' and loss != '0.0%':
+                        loss = f"[red]{loss}[/]"
+                    elif loss == '0.0%':
+                        loss = f"[green]{loss}[/]"
+                    
+                    peer_table.add_row(
+                        peer.get('ipv4', '-'),
+                        peer.get('hostname', '-'),
+                        peer.get('cost', '-'),
+                        lat,
+                        loss,
+                        peer.get('rx', '-') or '-',
+                        peer.get('tx', '-') or '-',
+                        peer.get('tunnel', '-') or '-'
+                    )
+                
+                console.print(peer_table)
 
 
 def prompt_easytier_side() -> Optional[str]:
