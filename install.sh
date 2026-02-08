@@ -231,9 +231,16 @@ if [ "$TUNNEL_MODE" = "easytier" ]; then
     echo -e "${YELLOW}Setting up EasyTier binaries...${NC}"
     
     # Stop any running EasyTier services first (to avoid "Text file busy")
+    echo -e "${YELLOW}Stopping running EasyTier processes...${NC}"
     systemctl stop 'vortexl2-easytier-*' 2>/dev/null || true
-    pkill -9 easytier-core 2>/dev/null || true
-    sleep 1
+    killall -9 easytier-core 2>/dev/null || true
+    killall -9 easytier-cli 2>/dev/null || true
+    pkill -9 -f easytier 2>/dev/null || true
+    sleep 2
+    
+    # Force remove old binaries
+    rm -f /usr/local/bin/easytier-core 2>/dev/null || true
+    rm -f /usr/local/bin/easytier-cli 2>/dev/null || true
     
     # Detect architecture
     ARCH=$(uname -m)
@@ -258,10 +265,6 @@ if [ "$TUNNEL_MODE" = "easytier" ]; then
     EASYTIER_SRC="$INSTALL_DIR/core/easytier/$EASYTIER_ARCH"
     
     if [ -d "$EASYTIER_SRC" ]; then
-        # Remove old binaries first
-        rm -f /usr/local/bin/easytier-core 2>/dev/null || true
-        rm -f /usr/local/bin/easytier-cli 2>/dev/null || true
-        
         cp "$EASYTIER_SRC/easytier-core" /usr/local/bin/
         cp "$EASYTIER_SRC/easytier-cli" /usr/local/bin/
         chmod +x /usr/local/bin/easytier-core
