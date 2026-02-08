@@ -427,23 +427,10 @@ class EasyTierConfigManager:
     
     def create_tunnel(self, name: str) -> EasyTierConfig:
         """Create new EasyTier tunnel config (not saved yet)."""
-        # Find next tun index
-        used_indices = set()
-        for tunnel in self.get_all_tunnels():
-            iface = tunnel.interface_name
-            if iface.startswith("tun"):
-                try:
-                    idx = int(iface[3:])
-                    used_indices.add(idx)
-                except ValueError:
-                    pass
-        
-        new_index = 1
-        while new_index in used_indices:
-            new_index += 1
-        
         tunnel = EasyTierConfig(name, auto_save=False)
-        tunnel._config["interface_name"] = f"tun{new_index}"
+        # Use tunnel name as interface name (Linux allows up to 15 chars)
+        iface_name = name[:15] if len(name) > 15 else name
+        tunnel._config["interface_name"] = iface_name
         tunnel._config["hostname"] = name
         return tunnel
     
